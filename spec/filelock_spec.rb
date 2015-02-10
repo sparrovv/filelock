@@ -113,19 +113,18 @@ describe Filelock do
     end
   end
 
-  it 'times out after specified number of seconds' do
+  it 'times out after exec fails within specified number of seconds' do
     Dir.mktmpdir do |dir|
       lockpath = File.join(dir, 'sample.lock')
 
       answer = 42
 
-      begin
+      expect {
         Filelock lockpath, :timeout => 1 do
           sleep 2
           answer = 0
         end
-      rescue Timeout::Error
-      end
+      }.to raise_error(Filelock::ExecTimeout)
 
       expect(answer).to eq(42)
     end
@@ -133,7 +132,30 @@ describe Filelock do
 
   # Java doesn't support forking
   if RUBY_PLATFORM != 'java'
-    
+
+    it 'times out after lock cannot be acquired within specified number of seconds' do
+      Dir.mktmpdir do |dir|
+        lockpath = File.join(dir, 'sample.lock')
+
+        pid1 = Process.fork do
+          Filelock lockpath do
+            sleep 3
+          end
+        end
+
+        # Give the forked process some time to spin up
+        sleep 1
+
+        expect {
+          Filelock lockpath, :wait => 1 do
+            answer = 0
+          end
+        }.to raise_error(Filelock::WaitTimeout)
+
+        Process.wait
+      end
+    end
+
     it 'should work for multiple processes' do
       write('/tmp/number.txt', '0')
 
